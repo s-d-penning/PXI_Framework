@@ -55,10 +55,9 @@ class VoltagePowerSource:
         channel_upper = channel.upper()
         if channel_upper == 'CH1' or channel_upper == 'CH2':
             self.channel = channel_upper
-            logger.debug(f'Using cSPD3303C channel: {self.channel}')
         else:
             raise ValueError("Channel must be either: 'CH1' or 'CH2'")
-        logger.debug(f'Using channel: {self.channel}')
+        logger.debug(f'Using SPD3303C channel: {self.channel}')
 
         if channel_config == '1':
             self.output_mode = 'Independent'
@@ -79,6 +78,14 @@ class VoltagePowerSource:
         logger.debug('Shutting power off')
         self.set_power_off()
 
+        logger.debug('Configuring safe state 0V, 0A')
+
+        logger.debug('Setting output voltage to 0V')
+        self.set_output_voltage(0)
+
+        logger.debug('Setting output current to 0A')
+        self.set_current_limit(0)
+
         self.refresh_status()
 
     def __del__(self):
@@ -93,11 +100,11 @@ class VoltagePowerSource:
         except Exception as e:
             logger.error(e)
 
-    def set_output_mode(self, mode: int):
+    def set_output_mode(self, mode: int) -> str:
         """
         Sets the output mode of the power supply
         :param mode: {0[Independent] | 1[Series] | 2[Parallel]}
-        :return:
+        :return: Output mode (Independent|Series|Parallel)
         """
         logger.debug(f'Setting output mode to {mode}')
         if mode == '0':
@@ -114,11 +121,12 @@ class VoltagePowerSource:
 
         rc = self.resource.write('OUTP:TRACK {self.channel_config}')
         self.refresh_status()
+        return self.output_mode
 
-    def refresh_status(self):
+    def refresh_status(self) -> str:
         """
         Refresh the status of the power supply
-        :return:
+        :return: Status of the power supply (Binary encoded string)
         """
         logger.debug('Refreshing status')
 
@@ -127,7 +135,7 @@ class VoltagePowerSource:
         status = self.resource.query(f'SYST:STAT?')
 
         self.status = bin(int(status, 16))
-        logger.debug(f'Status is reported as : {status}')
+        logger.debug(f'Status is reported as : {self.status}')
 
         if self.status[-1] == '0':
             self.ch1_mode = 'CV'
@@ -161,11 +169,12 @@ class VoltagePowerSource:
             self.output_mode = 'Series'
 
         logger.debug(f'output_mode: {self.output_mode}')
+        return self.status
 
-    def set_power_on(self):
+    def set_power_on(self) -> str:
         """
         Turns on the power for the configured channel
-        :return:
+        :return: State of the configured channel
         """
         logger.debug(f'Set power on')
         rc = self.resource.write(f'OUTP {self.channel},ON')
@@ -175,19 +184,30 @@ class VoltagePowerSource:
             rc = self.resource.write(f'OUTP {self.channel},ON')
             sleep(0.1)
             self.refresh_status()
+        if self.channel == 'CH1':
+            return self.ch1_state
+        else:
+            return self.ch2_state
 
-    def set_power_off(self):
+    def set_power_off(self) -> str:
         """
         Turns off the power for the configured channel
         :return:
         """
         logger.debug(f'Set power off')
         rc = self.resource.write(f'OUTP {self.channel},OFF')
+        logger.debug('Attempting power off, refresh status')
         self.refresh_status()
         while (self.ch1_state == 'On' and self.channel == 'CH1') or (self.ch2_state == 'On' and self.channel == 'CH2'):
+            logger.debug(f'Retry power off command to channel {self.channel}')
             rc = self.resource.write(f'OUTP {self.channel},OFF')
             sleep(0.1)
+            logger.debug(f'Refresh status after retry power off on channel {self.channel}')
             self.refresh_status()
+        if self.channel == 'CH1':
+            return self.ch1_state
+        else:
+            return self.ch2_state
 
     def get_output_voltage(self) -> float:
         """
@@ -231,7 +251,22 @@ class VoltagePowerSource:
         """
         self.voltage_setting = voltage
         rc = self.resource.write(f'{self.channel}:VOLT {voltage}')
+        sleep(0.1)
+        rc = self.resource.write(f'{self.channel}:VOLT {voltage}')
         self.voltage_setting = self.get_output_voltage()
+        return self.voltage_setting
+
+    def set_current_limit(self, current: float) -> float:
+        """
+        Sets the output current for the configured channel
+        :param current: Desired output current limit (Amps)
+        :return: measured output current (Amps)
+        """
+        self.voltage_setting = current
+        rc = self.resource.write(f'{self.channel}:CURR {current}')
+        sleep(0.1)
+        rc = self.resource.write(f'{self.channel}:CURR {current}')
+        self.current_setting = self.get_output_current()
         return self.voltage_setting
 
     def change_voltage(self, pct: float = 0.0) -> float:

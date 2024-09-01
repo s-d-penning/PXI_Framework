@@ -1,7 +1,8 @@
 from src.nidcpower.Power import VoltagePowerSource
 
 if __name__ == '__main__':
-    pxi_4110_channel_2 = VoltagePowerSource(resource_name='PXI_4110_1/2', min_voltage=-20, max_voltage=0)
+    pxi_4110_channel_2 = VoltagePowerSource(resource_name='PXI_4110_1/2',
+                                            min_voltage=-20, max_voltage=0)
     v_out = pxi_4110_channel_2.output_voltage()
     i_out = pxi_4110_channel_2.output_current()
     p_out = pxi_4110_channel_2.output_power()
