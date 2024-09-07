@@ -1,6 +1,7 @@
 from src.pyvisa.Power import VoltagePowerSource
 import pyvisa
 import logging
+import math
 
 logger = logging.getLogger('__main__')
 logger.setLevel(logging.DEBUG)
@@ -25,68 +26,23 @@ if __name__ == '__main__':
 
     logger.debug('Power on the voltage source')
     channel_state = spd3030c_channel_0.set_power_on()
-    logger.debug(f'channel_state: {channel_state}')
-    logger.debug('Measure the output voltage')
-    v_out = spd3030c_channel_0.get_output_voltage()
-    logger.debug(f'v_out: {v_out}')
-    logger.debug('Measure the output current')
-    i_out = spd3030c_channel_0.get_output_current()
-    logger.debug(f'i_out: {i_out}')
-    logger.debug('Measure the output power')
-    p_out = spd3030c_channel_0.get_output_power()
-    logger.debug(f'p_out: {p_out}')
-    logger.debug('Power off the voltage source')
-    channel_state = spd3030c_channel_0.set_power_off()
-    logger.debug(f'channel_state: {channel_state}')
 
-    v_out = 1.0
-    logger.debug(f'Set the voltage to {v_out}')
-    v_out = spd3030c_channel_0.set_output_voltage(v_out)
-    logger.debug(f'v_out: {v_out}')
+    p_max = 10
+    r = 1
+    i_max = round(math.sqrt(p_max/r),2)
 
-    i_out = 3.2
-    logger.debug(f'Set the current limit to {i_out}')
-    v_out = spd3030c_channel_0.set_current_limit(i_out)
-    logger.debug(f'i_out: {i_out}')
+    v_max = round(i_max * 2,2)
+    spd3030c_channel_0.set_output_voltage(v_max)
 
-    logger.debug('Power on the voltage source')
-    channel_state = spd3030c_channel_0.set_power_on()
-    logger.debug(f'channel_state: {channel_state}')
-    logger.debug('Measure the output voltage')
-    v_out = spd3030c_channel_0.get_output_voltage()
-    logger.debug(f'v_out: {v_out}')
-    logger.debug('Measure the output current')
-    i_out = spd3030c_channel_0.get_output_current()
-    logger.debug(f'i_out: {i_out}')
-    logger.debug('Measure the output power')
-    p_out = spd3030c_channel_0.get_output_power()
-    logger.debug(f'p_out: {p_out}')
-    logger.debug('Power off the voltage source')
-    channel_state = spd3030c_channel_0.set_power_off()
-    logger.debug(f'channel_state: {channel_state}')
+    i_step = 0.1
+    # i_max = 2.0
+    i_steps = int(i_max/i_step) + 1
+    i_range = [round(i*i_step,4) for i in range(i_steps)]
+    for i_out in i_range:
+        spd3030c_channel_0.set_current_limit(i_out)
+        v_out_result = spd3030c_channel_0.get_output_voltage()
+        i_out_result = spd3030c_channel_0.get_output_current()
+        p_out_result = spd3030c_channel_0.get_output_power()
+        logger.debug(f'{i_out},{i_out_result},{v_out_result},{p_out_result}')
 
-    v_out = 2.0
-    logger.debug(f'Set the voltage to {v_out}')
-    v_out = spd3030c_channel_0.set_output_voltage(v_out)
-    logger.debug(f'v_out: {v_out}')
 
-    i_out = 3.2
-    logger.debug(f'Set the current limit to {i_out}')
-    v_out = spd3030c_channel_0.set_current_limit(i_out)
-    logger.debug(f'i_out: {i_out}')
-
-    logger.debug('Power on the voltage source')
-    channel_state = spd3030c_channel_0.set_power_on()
-    logger.debug(f'channel_state: {channel_state}')
-    logger.debug('Measure the output voltage')
-    v_out = spd3030c_channel_0.get_output_voltage()
-    logger.debug(f'v_out: {v_out}')
-    logger.debug('Measure the output current')
-    i_out = spd3030c_channel_0.get_output_current()
-    logger.debug(f'i_out: {i_out}')
-    logger.debug('Measure the output power')
-    p_out = spd3030c_channel_0.get_output_power()
-    logger.debug(f'p_out: {p_out}')
-    logger.debug('Power off the voltage source')
-    channel_state = spd3030c_channel_0.set_power_off()
-    logger.debug(f'channel_state: {channel_state}')
