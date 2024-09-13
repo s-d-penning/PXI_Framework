@@ -55,8 +55,8 @@ class VoltagePowerSource:
         self.ch2_state = 'Unknown'
         self.channel = 'Unknown'
 
-        self.voltage_setting = 0.0
-        self.current_setting = 0.0
+        self.voltage_setting = 30
+        self.current_setting = 3
 
         self.channel_config = channel_config
         self.min_voltage = min_voltage
@@ -85,27 +85,22 @@ class VoltagePowerSource:
 
         self.resource.clear()
 
+        self.set_output_mode(0)
+        sleep(0.1)
         self.set_output_mode(channel_config)
 
         logger.debug('Shutting down active channels')
         self.set_power_off()
 
-        if mode == 'voltage':
-            self.resource.write(f'{self.channel}:VOLT 0.01')
-            sleep(self.delay)
-            self.resource.write(f'{self.channel}:CURR 3.2')
-        else:
-            self.resource.write(f'{self.channel}:CURR 0.01')
-            sleep(self.delay)
-            self.resource.write(f'{self.channel}:VOLT 32')
+        self.set_output_voltage(30)
+        self.set_output_current(3)
 
-        # logger.debug('Configuring safe state 0V, 0A')
-        #
-        # logger.debug('Setting output voltage to 0V')
-        # self.set_output_voltage(0)
-        #
-        # logger.debug('Setting output current to 0A')
-        # self.set_output_current(0)
+        # if mode == 'voltage':
+        #     self.set_output_voltage(0.1)
+        #     self.set_output_current(3)
+        # else:
+        #     self.set_output_current(0.1)
+        #     self.set_output_voltage(30)
 
         self.refresh_status()
 
@@ -309,8 +304,6 @@ class VoltagePowerSource:
                 logger.error(f'Increasing delay by {self.delay_step}')
                 self.delay += self.delay_step
         return result
-
-
 
     def set_output_current(self, current: float) -> float:
         """
