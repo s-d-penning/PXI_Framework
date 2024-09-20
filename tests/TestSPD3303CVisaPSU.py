@@ -1,180 +1,55 @@
-import logging
-import math
-
-from src.pyvisa.Power import VoltagePowerSource
-
-logger = logging.getLogger('__main__')
-logger.setLevel(logging.DEBUG)
-
-# create console handler and set level to debug
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-
-# create formatter
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# add formatter to ch
-ch.setFormatter(formatter)
-
-# add ch to logger
-logger.addHandler(ch)
-
-
-def test_current_mode():
-    # Make sure the leads are on CH1 connectors
-    logger.debug('Test independent mode, channel 1')
-    logger.debug('Create VoltagePowerSource')
-    spd3030c_channel_0_independent = VoltagePowerSource(resource_name='USB0::0x0483::0x7540::SPD3ECAX1L1560::INSTR',
-                                                        channel='CH1',
-                                                        channel_config=0,
-                                                        mode='current')
-
-    with spd3030c_channel_0_independent:
-        p_max = 10
-        r = 1
-        i_max = round(math.sqrt(p_max / r), 2)
-        spd3030c_channel_0_independent.set_output_current(i_max)
-        v_max = round(i_max * 2, 2)
-        spd3030c_channel_0_independent.set_output_voltage(v_max)
-
-        # logger.debug('Power on the voltage source')
-        # channel_state = spd3030c_channel_0_independent.set_power_on()
-        # logger.debug(f'Channel state: {channel_state}')
-
-        i_step = 0.1
-        # i_max = 2.0
-        i_steps = int(i_max / i_step) + 1
-        i_range = [round(i * i_step, 4) for i in range(i_steps)]
-        for i_out in i_range:
-            spd3030c_channel_0_independent.set_output_current(i_out)
-            if spd3030c_channel_0_independent.ch1_state == 'off':
-                logger.debug('Power on the CURRENT source')
-            v_out_result = spd3030c_channel_0_independent.get_output_voltage()
-            i_out_result = spd3030c_channel_0_independent.get_output_current()
-            p_out_result = spd3030c_channel_0_independent.get_output_power()
-            logger.debug(f'{i_out},{i_out_result},{v_out_result},{p_out_result}')
-
-    # Make sure the leads are on CH1 connectors
-    logger.debug('Test parallel mode, channel 1')
-    spd3030c_channel_0_parallel = VoltagePowerSource(resource_name='USB0::0x0483::0x7540::SPD3ECAX1L1560::INSTR',
-                                                     channel='CH1',
-                                                     channel_config=2)
-    with spd3030c_channel_0_parallel:
-        p_max = 10
-        r = 1
-        i_max = round(math.sqrt(p_max / r), 2)
-        spd3030c_channel_0_parallel.set_output_current(i_max)
-        v_max = round(i_max * 2, 2)
-        spd3030c_channel_0_parallel.set_output_voltage(v_max)
-
-        logger.debug('Power on the voltage source')
-        channel_state = spd3030c_channel_0_parallel.set_power_on()
-        logger.debug(f'Channel state: {channel_state}')
-
-        i_step = 0.1
-        # i_max = 2.0
-        i_steps = int(i_max / i_step) + 1
-        i_range = [round(i * i_step, 4) for i in range(i_steps)]
-        for i_out in i_range:
-            spd3030c_channel_0_parallel.set_output_current(i_out)
-            v_out_result = spd3030c_channel_0_parallel.get_output_voltage()
-            i_out_result = spd3030c_channel_0_parallel.get_output_current()
-            p_out_result = spd3030c_channel_0_parallel.get_output_power()
-            logger.debug(f'{i_out},{i_out_result},{v_out_result},{p_out_result}')
-
-
-def test_voltage_mode():
-    # Make sure the leads are on CH1 connectors
-    logger.debug('Test independent mode, channel 1')
-    logger.debug('Create VoltagePowerSource')
-    spd3030c_channel_0_independent = VoltagePowerSource(resource_name='USB0::0x0483::0x7540::SPD3ECAX1L1560::INSTR',
-                                                        channel='CH1',
-                                                        channel_config=0,
-                                                        mode='voltage')
-    with spd3030c_channel_0_independent:
-        logger.debug('Power on the voltage source')
-        channel_state = spd3030c_channel_0_independent.set_power_on()
-        logger.debug(f'Channel state: {channel_state}')
-
-        p_max = 10
-        r = 1
-
-        i_max = round(math.sqrt(p_max / r), 2)
-        v_max = round(i_max * 2, 2)
-        spd3030c_channel_0_independent.set_output_voltage(v_max)
-        spd3030c_channel_0_independent.set_output_current(i_max)
-
-        v_step = 0.1
-        v_steps = int(v_max / v_step) + 1
-
-        v_range = [round(v * v_step, 4) for v in range(v_steps)]
-        for v_out in v_range:
-            spd3030c_channel_0_independent.set_output_voltage(v_out)
-            v_out_result = spd3030c_channel_0_independent.get_output_voltage()
-            i_out_result = spd3030c_channel_0_independent.get_output_current()
-            p_out_result = spd3030c_channel_0_independent.get_output_power()
-            logger.debug(f'{v_out},{v_out_result},{i_out_result},{p_out_result}')
-
-    # Make sure the leads are on CH1 connectors
-    logger.debug('Test parallel mode, channel 1')
-    logger.debug('Create VoltagePowerSource')
-    spd3030c_channel_0_parallel = VoltagePowerSource(resource_name='USB0::0x0483::0x7540::SPD3ECAX1L1560::INSTR',
-                                                     channel='CH1',
-                                                     channel_config=2)
-    with spd3030c_channel_0_parallel:
-        logger.debug('Power on the voltage source')
-        channel_state = spd3030c_channel_0_parallel.set_power_on()
-        logger.debug(f'Channel state: {channel_state}')
-
-        p_max = 10
-        r = 1
-        i_max = round(math.sqrt(p_max / r), 2)
-        v_max = round(i_max * 2, 2)
-        spd3030c_channel_0_parallel.set_output_voltage(v_max)
-        spd3030c_channel_0_parallel.set_output_current(i_max)
-
-        v_step = 0.1
-        v_steps = int(v_max / v_step) + 1
-        v_range = [round(v * v_step, 4) for v in range(v_steps)]
-        for v_out in v_range:
-            spd3030c_channel_0_parallel.set_output_voltage(v_out)
-            v_out_result = spd3030c_channel_0_parallel.get_output_voltage()
-            i_out_result = spd3030c_channel_0_parallel.get_output_current()
-            p_out_result = spd3030c_channel_0_parallel.get_output_power()
-            logger.debug(f'{v_out},{v_out_result},{i_out_result},{p_out_result}')
-
-    # Make sure the leads are across CH1/CH2 connectors
-    logger.debug('Test series mode, channel 1/2')
-    logger.debug('Create VoltagePowerSource')
-    spd3030c_channel_0_series = VoltagePowerSource(resource_name='USB0::0x0483::0x7540::SPD3ECAX1L1560::INSTR',
-                                                   channel='CH1',
-                                                   channel_config=1)
-    with spd3030c_channel_0_series:
-        logger.debug('Power on the voltage source')
-        channel_state = spd3030c_channel_0_series.set_power_on()
-        logger.debug(f'Channel state: {channel_state}')
-
-        p_max = 10
-        r = 1
-        i_max = round(math.sqrt(p_max / r), 2)
-        v_max = round(i_max * 2, 2)
-        spd3030c_channel_0_series.set_output_voltage(v_max)
-        spd3030c_channel_0_series.set_output_current(i_max)
-
-        v_step = 0.1
-        v_steps = int(v_max / v_step) + 1
-        v_range = [round(v * v_step, 4) for v in range(v_steps)]
-        for v_out in v_range:
-            spd3030c_channel_0_series.set_output_voltage(v_out)
-            v_out_result = spd3030c_channel_0_series.get_output_voltage()
-            i_out_result = spd3030c_channel_0_series.get_output_current()
-            p_out_result = spd3030c_channel_0_series.get_output_power()
-            logger.debug(f'{v_out},{v_out_result},{i_out_result},{p_out_result}')
-
-
-
+from src.pyvisa.Power import PowerChannel, VoltageSource, CurrentSource
 
 if __name__ == '__main__':
-    logger.debug('Starting test program')
-    test_current_mode()
-    test_voltage_mode()
+    with PowerChannel() as p:
+        p.set_channel_power_on("CH1")
+        p.set_channel_power_off("CH1")
+        p.set_channel_power_on("CH2")
+        p.set_channel_power_off("CH2")
+        p.set_channel_power_on("CH3")
+        p.set_channel_power_off("CH3")
+
+    p = None
+
+    with PowerChannel() as p:
+        p.set_channel_power_on("CH1")
+        p.set_channel_power_on("CH2")
+        p.set_channel_power_on("CH3")
+
+    p = None
+
+    output_voltages = [1.0, 0.5, 0.0, 0.5, 1.0]
+    with VoltageSource() as p:
+        p.set_channel_power_on("CH1")
+        for output_voltage in output_voltages:
+            p.set_channel_voltage("CH1", output_voltage)
+        p.set_channel_power_off("CH1")
+
+        p.set_channel_power_on("CH2")
+        for output_voltage in output_voltages:
+            p.set_channel_voltage("CH2", output_voltage)
+        p.set_channel_power_off("CH2")
+
+    p = None
+
+    # output_voltages = [round((v/100)*6.4,2) for v in range(101)]
+    output_voltages = [0,1] * 100
+    with VoltageSource() as p:
+        p.set_channel_power_on("CH1")
+        for output_voltage in output_voltages:
+            # print(output_voltage)
+            p.set_channel_voltage("CH1", output_voltage)
+        print(p.delay)
+
+    p = None
+
+    # output_voltages = [round((v/100)*6.4,2) for v in range(101)]
+    output_currents = [round((v / 100) * 3.1, 2) for v in range(101)]
+    with CurrentSource() as p:
+        p.set_channel_power_on("CH1")
+        for output_current in output_currents:
+            print(output_current)
+            p.set_channel_current("CH1", output_current)
+        print(p.delay)
+
+    p = None

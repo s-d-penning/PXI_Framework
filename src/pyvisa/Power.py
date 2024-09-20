@@ -1,195 +1,101 @@
+from time import sleep
+
 import pyvisa
 from pyvisa import ResourceManager, VisaIOError
 from pyvisa.resources.usb import USBInstrument
 from pyvisa.constants import AccessModes
 
-from time import sleep, time
-import logging
-import time
 
-logger = logging.getLogger('VoltagePowerSource')
-logger.setLevel(logging.DEBUG)
+class PowerSupply:
+    def __init__(self, usb: int = 0, manufacturer_id: str = '0x0483', model_code: str = '0x7540',
+                 serial_number: str = 'SPD3ECAX1L1560', output_mode: int = 0):
 
-# create console handler and set level to debug
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-
-# create formatter
-# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-formatter = logging.Formatter('Power.Py [%(asctime)s] %(lineno)d %(levelname)s - %(message)s','%m-%d %H:%M:%S')
-
-# add formatter to ch
-ch.setFormatter(formatter)
-
-# add ch to logger
-logger.addHandler(ch)
-
-
-class VoltagePowerSource:
-    def __init__(self, resource_name: str,
-                 channel: str = 'CH1',
-                 channel_config: int = 0,
-                 min_voltage: float = 0.0, max_voltage: float = 32.0,
-                 max_current:float = 3.2,
-                 mode = 'voltage',
-                 delay=0.1):
-        """
-        Initialises one channel of the SPD3303C Power supply
-
-        :param resource_name: VISA resource name
-        :param channel: CH1 or CH2
-        :param channel_config: {0[Independent] | 1[Series] | 2[Parallel]}
-        :param min_voltage: 0 (Volts)
-        :param max_voltage: 32.0 (Volts) for Independent mode, 64.0 (Volts) for Series mode
-        :param max_current: 3.2 (Current) for Series and Independent modes, 6.4 for Parallel mode
-        :param mode: voltage or current mode
-        """
-        logger.debug(f'Initializing {resource_name}: {channel}, {channel_config}, {min_voltage}, {max_voltage}')
-
-        self.delay_step = 0.1
-        self.delay = delay
-        self.status = bin(0x00)
-        self.ch1_mode = 'Unknown'
-        self.ch2_mode = 'Unknown'
-        self.ch1_state = 'Unknown'
-        self.ch2_state = 'Unknown'
-        self.channel = 'Unknown'
-
-        self.voltage_setting = 30
-        self.current_setting = 3
-
-        self.channel_config = channel_config
-        self.min_voltage = min_voltage
-        self.max_voltage = max_voltage
-        self.resource_name = resource_name
-
-        self.current_multiplier = 1
-        self.voltage_multiplier = 1
-        self.output_mode = 'Unknown'
-
-        channel_upper = channel.upper()
-        if channel_upper == 'CH1' or channel_upper == 'CH2':
-            self.channel = channel_upper
-        else:
-            raise ValueError("Channel must be either: 'CH1' or 'CH2'")
-        logger.debug(f'Using SPD3303C channel: {self.channel}')
-
-        logger.debug('Acquiring PyVisa Resource Manager')
+        self.resource_name = f'USB{usb}::{manufacturer_id}::{model_code}::{serial_number}::INSTR'
         self.resource_manager: ResourceManager = pyvisa.highlevel.ResourceManager()
-        # self.resource_manager.query_delay = 0.5
+        self.access_mode = AccessModes.exclusive_lock
+        self.delay = 0.025
+        self.output_mode = '-1'
+        self.voltage_multiplier = 1
+        self.current_multiplier = 1
+        self.status = bin(0x00)
 
-        inst = 'USB0::0x0483::0x7540::SPD3ECAX1L1560::INSTR'
-        logger.debug(f'Acquiring PyVisa Instrument {inst}')
-        self.resource: USBInstrument = self.resource_manager.open_resource(resource_name =inst,
-                                                                           access_mode = AccessModes.exclusive_lock)
+        self.channel_1 = "CH1"
+        self.channel_2 = "CH2"
+        self.channel_3 = "CH3"
 
-        self.resource.clear()
+        self.ch1_mode = 'UNK'
+        self.ch2_mode = 'UNK'
+        self.ch3_mode = 'CV/CL'
 
-        self.set_output_mode(0)
-        sleep(0.1)
-        self.set_output_mode(channel_config)
+        self.resource: USBInstrument = self.resource_manager.open_resource(resource_name=self.resource_name,
+                                                                           access_mode=AccessModes.exclusive_lock)
 
-        logger.debug('Shutting down active channels')
-        self.set_power_off()
+        self.set_channel_power(self.channel_1, 'OFF')
+        self.channel_1_state = 'OFF'
+        self.set_channel_power(self.channel_2, 'OFF')
+        self.channel_2_state = 'OFF'
+        self.set_channel_power(self.channel_3, 'OFF')
+        self.channel_3_state = 'OFF'
 
-        self.set_output_voltage(30)
-        self.set_output_current(3)
-
-        # if mode == 'voltage':
-        #     self.set_output_voltage(0.1)
-        #     self.set_output_current(3)
-        # else:
-        #     self.set_output_current(0.1)
-        #     self.set_output_voltage(30)
-
-        self.refresh_status()
-
-    def __enter__(self):
-        return self.resource_manager
-
-    def __close__(self):
-        self.resource_manager.close()
-
-    def __exit__(self, type, value, traceback):
-        # Set the output voltage to zero so we know the output is 'off'
-        logger.debug('Quitting')
-        try:
-            logger.debug('Shutting power off')
-            self.set_power_off()
-
-            logger.debug('Closing resource')
-            self.resource.close()
-        except Exception as e:
-            logger.error(e)
-
-    def set_output_mode(self, mode: int) -> str:
-        """
-        Sets the output mode of the power supply
-        :param mode: {0[Independent] | 1[Series] | 2[Parallel]}
-        :return: Output mode (Independent|Series|Parallel)
-        """
-        if mode == 0:
+        if output_mode == 0:
             self.output_mode = 'Independent'
             self.voltage_multiplier = 1
             self.current_multiplier = 1
-        elif mode == 1:
+        elif output_mode == 1:
             self.output_mode = 'Series'
             self.voltage_multiplier = 2
             self.current_multiplier = 1
-        elif mode == 2:
+        elif output_mode == 2:
             self.output_mode = 'Parallel'
             self.voltage_multiplier = 1
             self.current_multiplier = 2
         else:
             raise ValueError("Channel config must be: 0,1 or 2")
-        logger.debug(f'Setting output mode to {self.output_mode}')
-        self.channel_config = mode
+
+        self.channel_config = output_mode
         rc = self.resource.write(f'OUTP:TRACK {self.channel_config}')
         sleep(self.delay)
-        return self.output_mode
 
-    def refresh_status(self) -> str:
-        """
-        Refresh the status of the power supply
-        :return: Status of the power supply (Binary encoded string)
-        """
-        logger.debug('Refreshing status')
+    def __del__(self):
+        self.resource_manager.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.resource.close()
+
+    def refresh_status(self):
         status = None
         while status is None:
             try:
                 rc = self.resource.write(f'SYST:STAT?')
                 sleep(self.delay)
+                # self.delay = self.delay * 0.95
                 status = self.resource.read()
-            except Exception as e:
-                self.delay += 0.1
-                logger.error(e)
-
-        self.status = bin(int(status, 16)).lstrip("0b").rjust(8,'0')
-        logger.debug(f'Status is reported as : {self.status}')
+            except VisaIOError as e:
+                self.delay = self.delay * 1.1
+        self.status = bin(int(status, 16)).lstrip("0b").rjust(8, '0')
 
         if self.status[-1] == '0':
             self.ch1_mode = 'CV'
         elif self.status[-1] == '1':
             self.ch1_mode = 'CC'
-        logger.debug(f'ch1_mode: {self.ch1_mode}')
 
         if self.status[-5] == '0':
-            self.ch1_state = 'Off'
+            self.channel_1_state = 'OFF'
         elif self.status[-5] == '1':
-            self.ch1_state = 'On'
-        logger.debug(f'ch1_state: {self.ch1_state}')
+            self.channel_1_state = 'ON'
 
         if self.status[-2] == '0':
             self.ch2_mode = 'CV'
         elif self.status[-2] == '1':
             self.ch2_mode = 'CC'
-        logger.debug(f'ch2_mode: {self.ch2_mode}')
 
         if self.status[-6] == '0':
-            self.ch2_state = 'Off'
+            self.channel_2_state = 'OFF'
         elif self.status[-6] == '1':
-            self.ch2_state = 'On'
-        logger.debug(f'ch2_state: {self.ch2_state}')
+            self.channel_2_state = 'ON'
 
         if self.status[-4] == '0' and self.status[-3] == '1':
             self.output_mode = 'Independent'
@@ -198,161 +104,351 @@ class VoltagePowerSource:
         elif self.status[-4] == '1' and self.status[-3] == '1':
             self.output_mode = 'Series'
 
-        logger.debug(f'output_mode: {self.output_mode}')
         return self.status
 
-    def set_power_on(self) -> str:
-        """
-        Turns on the power for the configured channel
-        :return: State of the configured channel
-        """
-        logger.debug(f'Set power on')
-        rc = self.resource.write(f'OUTP {self.channel},ON')
-        sleep(self.delay)
-        self.refresh_status()
-        if self.channel == 'CH1':
-            return self.ch1_state
-        else:
-            return self.ch2_state
-
-    def set_power_off(self) -> str:
-        """
-        Turns off the power for the configured channel
-        :return:
-        """
-        logger.debug(f'Sending power off command to channel {self.channel}')
+    def set_channel_power(self, channel: str = "CH1", state: str = "OFF"):
         try:
-            rc = self.resource.write(f'OUTP {self.channel},OFF')
+            if channel != 'CH3':
+                rc = self.resource.write(f'INST {channel}')
+                sleep(self.delay)
+            rc = self.resource.write(f'OUTP {channel},{state}')
             sleep(self.delay)
-            self.refresh_status()
-        except VisaIOError as e:
-            self.delay += self.delay_step
-        if self.channel == 'CH1':
-            return self.ch1_state
+            # self.delay = self.delay * 0.95
+        except VisaIOError:
+            self.delay = self.delay * 1.1
+
+        self.refresh_status()
+
+
+class PowerChannel(PowerSupply):
+    """
+    Knows about channel states without interpreting modes
+    """
+
+    def __init__(self, usb: int = 0, manufacturer_id: str = '0x0483', model_code: str = '0x7540',
+                 serial_number: str = 'SPD3ECAX1L1560', output_mode: int = 0):
+        super().__init__(usb, manufacturer_id, model_code, serial_number, output_mode)
+
+        super().refresh_status()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Put the channels into a safe state
+        self.set_channel_power_off(self.channel_1)
+        self.set_channel_power_off(self.channel_2)
+        self.set_channel_power_off(self.channel_3)
+
+    def set_channel_power_on(self, channel: str = 'CH1') -> str:
+        super().set_channel_power(channel, 'ON')
+
+        if channel == 'CH1':
+            return self.channel_1_state
+        if channel == 'CH2':
+            return self.channel_2_state
         else:
-            return self.ch2_state
+            self.channel_3_state = 'ON'
+            return self.channel_3_state
 
-    def get_output_voltage(self) -> float:
-        """
-        Reads the output voltage of the configured channel
-        :return: output (Volts)
-        """
-        logger.debug(f'Get output voltage')
+    def set_channel_power_off(self, channel: str = 'CH1') -> str:
+        super().set_channel_power(channel, 'OFF')
 
+        if channel == 'CH1':
+            return self.channel_1_state
+        if channel == 'CH2':
+            return self.channel_2_state
+        else:
+            self.channel_3_state = 'OFF'
+            return self.channel_3_state
+
+    def set_channel_voltage(self, channel: str = "CH1", value: float = 0.01):
+        rc2 = None
+        while rc2 is None:
+            try:
+                rc = self.resource.write(f'INST {channel}')
+                sleep(self.delay)
+                rc2 = self.resource.write(f'{channel}:VOLT {value}')
+                sleep(self.delay)
+            except VisaIOError as e:
+                self.delay = self.delay * 1.1
+        return value
+
+    def get_channel_voltage(self, channel: str = "CH1") -> float:
         result = None
         while result is None:
-            logger.debug(f'Reading output voltage')
             try:
-                rc = self.resource.write(f'MEAS:VOLT? {self.channel}') * self.voltage_multiplier
+                rc = self.resource.write(f'INST {channel}')
                 sleep(self.delay)
-                result = self.resource.read()
-                self.voltage_setting = float(result) * self.voltage_multiplier
-                logger.debug(f'Output voltage reads {self.voltage_setting} volts')
-            except VisaIOError as e:
-                logger.error(f'Increasing delay by {self.delay_step}')
-                self.delay += self.delay_step
-        return self.voltage_setting
-
-    def get_output_current(self) -> float:
-        """
-        Reads the output current of the configured channel
-        :return: Output current (Amps)
-        """
-        logger.debug(f'Get output current')
-
-        result = None
-        while result is None:
-            logger.debug(f'Reading output current')
-            try:
-                rc = self.resource.write(f'MEAS:CURR? {self.channel}') * self.current_multiplier
+                rc = self.resource.write(f'MEAS:VOLT? {channel}')
                 sleep(self.delay)
-                result = self.resource.read()
-                self.current_setting = float(result) * self.current_multiplier
-                logger.debug(f'Output current reads {self.current_setting} amperes')
+                reading = self.resource.read()
+                result = float(reading)
+                # self.delay = self.delay * 0.95
             except VisaIOError as e:
-                logger.error(f'Increasing delay by {self.delay_step}')
-                self.delay += self.delay_step
-        return self.current_setting
+                self.delay = self.delay * 1.1
 
-    def get_output_power(self) -> float:
-        """
-        Calculates the output power of the configured channel
-        :return: Output power (Watts)
-        """
-        logger.debug(f'Get output power')
-
-        output_voltage = self.get_output_voltage()
-        output_current = self.get_output_current()
-        output_power = output_voltage * output_current
-        return output_power
-
-    def set_output_voltage(self, voltage: float) -> float:
-        """
-        Sets the output voltage for the configured channel
-        :param voltage: Desired output voltage (Volts)
-        :return: measured output voltage (Volts)
-        """
-        result = None
-        while result is None:
-            logger.debug(f'Set output voltage to {voltage}')
-            try:
-                setting = voltage / self.voltage_multiplier
-                rc = self.resource.write(f'{self.channel}:VOLT {setting}')
-                sleep(self.delay)
-                result = self.get_output_voltage()
-            except VisaIOError as e:
-                logger.error(f'Increasing delay by {self.delay_step}')
-                self.delay += self.delay_step
         return result
 
-    def set_output_current(self, current: float) -> float:
-        """
-        Sets the output current for the configured channel
-        :param current: Desired output current limit (Amps)
-        :return: measured output current (Amps)
-        """
+    def set_channel_current(self, channel: str = "CH1", current: float = 3.2) -> float:
         result = None
         while result is None:
-            logger.debug(f'Set output current limit to {current}')
             try:
-                current_setting = current / self.current_multiplier
-                rc = self.resource.write(f'{self.channel}:CURR {current_setting}')
+                rc = self.resource.write(f'INST {channel}')
                 sleep(self.delay)
-                result = self.get_output_current()
+                rc = self.resource.write(f'{channel}:CURR {current}')
+                sleep(self.delay)
+                result = self.get_channel_current()
             except VisaIOError as e:
-                logger.error(f'Increasing delay by {self.delay_step}')
-                self.delay += self.delay_step
+                self.delay = self.delay * 1.1
         return result
 
-    def change_voltage(self, pct: float = 0.0) -> float:
-        """
-        Changes the output voltage  by the specified pct until the voltage reaches the configured or hard positive or negative limit
-        :param pct: percentage change (positive or negative)
-        :return: Measured output voltage (Volts)
-        """
-        output_voltage = self.get_output_voltage()
-        dv = self.max_voltage * pct / 100.0
-        new_output_voltage = output_voltage + dv
-        if abs(new_output_voltage) <= abs(self.max_voltage):
-            output_voltage = self.set_output_voltage(new_output_voltage)
+    def get_channel_current(self, channel: str = "CH1") -> float:
+        result = None
+        while result is None:
+            try:
+                rc = self.resource.write(f'INST {channel}')
+                sleep(self.delay)
+                rc = self.resource.write(f'MEAS:CURR? {channel}')
+                sleep(self.delay)
+                result = self.resource.read()
+                result = float(result)
+                # self.delay = self.delay * 0.95
+            except VisaIOError as e:
+                self.delay = self.delay * 1.1
+        return result
+
+
+class VoltageSource(PowerChannel):
+    """
+    Knows about voltage states, using modes to interpret the multipliers
+    """
+
+    def __init__(self, usb: int = 0, manufacturer_id: str = '0x0483', model_code: str = '0x7540',
+                 serial_number: str = 'SPD3ECAX1L1560', channel_3_voltage: float = 5.0, output_mode: int = 0):
+        if output_mode == 0:
+            channel = ("CH1", "CH2", "CH3")
         else:
-            output_voltage = self.get_output_voltage()
-        return output_voltage
+            channel = ("CH1", "CH3")
 
-    def set_min_voltage(self, sample_size: int = 1) -> float:
-        """
-        Sets the output voltage of the configured channel to the minimum voltage configured for the channel
-        :param sample_size: Number of samples to use for the measurement
-        :return: Measured output voltage (Volts)
-        """
-        output_voltage = self.set_output_voltage(self.min_voltage)
-        return output_voltage
+        super().__init__(usb=usb, manufacturer_id=manufacturer_id, model_code=model_code, serial_number=serial_number
+                         , output_mode=output_mode)
 
-    def set_max_voltage(self, sample_size: int = 1) -> float:
-        """
-        Sets the output voltage of the configured channel to the maximum voltage configured for the channel
-        :param sample_size: Number of samples to use for the measurement
-        :return: Measured output voltage (Volts)
-        """
-        output_voltage = self.set_output_voltage(self.max_voltage)
-        return output_voltage
+        # Set the channels to Voltage mode by setting the max output current to the physical maximum
+        if self.output_mode == 'Independent':
+            self.current_setting_ch1 = 3.2
+            self.current_setting_ch2 = 3.2
+            super().set_channel_current(self.channel_1, self.current_setting_ch1)
+            super().set_channel_current(self.channel_2, self.current_setting_ch2)
+        if self.output_mode == 'Parallel':
+            self.current_setting_ch1 = 6.4
+            self.current_setting_ch2 = 0
+            super().set_channel_current(self.channel_1, self.current_setting_ch1)
+        if self.output_mode == 'Series':
+            self.current_setting_ch1 = 3.2
+            self.current_setting_ch2 = 3.2
+            super().set_channel_current(self.channel_1, self.current_setting_ch1)
+
+        self.voltage_max_ch3 = channel_3_voltage
+
+        # Set channels into safe mode
+        # All channels start as 'OFF' = 0v
+        self.voltage_setting_ch1 = 0
+        self.voltage_setting_ch2 = 0
+
+        super().set_channel_voltage(self.channel_1, self.voltage_setting_ch1)
+        super().set_channel_voltage(self.channel_2, self.voltage_setting_ch2)
+        self.voltage_setting_ch3 = 0  # Channel 3 is OFF so 0v
+
+    def set_channel_voltage(self, channel: str = "CH1", value: float = 0.0, power_on: bool = True):
+        if channel == "CH3":
+            result = self.voltage_max_ch3
+        else:
+            if self.output_mode == 'Series':
+                setting = value / 2.0
+            else:
+                setting = value
+            super().set_channel_voltage(channel=channel, value=setting)
+
+        if channel == 'CH1':
+            self.voltage_setting_ch1 = value
+        elif channel == 'CH2':
+            self.voltage_setting_ch2 = value
+        else:
+            self.voltage_setting_ch3 = value
+
+        # result = self.get_output_voltage(channel=channel)
+        return value
+
+    def get_output_voltage(self, channel: str = "CH1") -> float:
+        voltage_reading = None
+        if channel == 'CH3' and self.channel_3_state == 'ON':
+            voltage_reading = self.voltage_max_ch3
+        elif channel == 'CH3' and self.channel_3_state == 'OFF':
+            voltage_reading = 0
+        else:
+            if self.output_mode == 'Independent' and (channel == 'CH1' or channel == "CH2"):
+                voltage = super().get_channel_voltage(channel=self.channel_1)
+                self.voltage_setting_ch1 = voltage
+                voltage = super().get_channel_voltage(channel=self.channel_2)
+                self.voltage_setting_ch2 = voltage
+            elif self.output_mode == 'Parallel' and (channel == 'CH1' or channel == "CH2"):
+                voltage = super().get_channel_voltage(channel=self.channel_1)
+                self.voltage_setting_ch1 = voltage
+                self.voltage_setting_ch1 = voltage
+            elif self.output_mode == 'Series' and (channel == 'CH1' or channel == "CH2"):
+                voltage = super().get_channel_voltage(channel=self.channel_1)
+                voltage_reading = voltage * self.voltage_multiplier
+                self.voltage_setting_ch1 = voltage
+                self.voltage_setting_ch2 = 0
+
+        return voltage_reading
+
+
+class CurrentSource(PowerChannel):
+    """
+    Knows about current states, using modes to interpret the multipliers
+    """
+
+    def __init__(self, usb: int = 0, manufacturer_id: str = '0x0483', model_code: str = '0x7540',
+                 serial_number: str = 'SPD3ECAX1L1560', output_mode: int = 0):
+
+        super().__init__(usb=usb, manufacturer_id=manufacturer_id, model_code=model_code, serial_number=serial_number
+                         , output_mode=output_mode)
+
+        # Set the channels to Voltage mode by setting the max output current to the physical maximum
+        if self.output_mode == 'Independent':
+            self.voltage_setting_ch1 = 32
+            self.voltage_setting_ch2 = 32
+            super().set_channel_voltage(self.channel_1, self.voltage_setting_ch1)
+            super().set_channel_voltage(self.channel_2, self.voltage_setting_ch2)
+        if self.output_mode == 'Parallel':
+            self.voltage_setting_ch1 = 32
+            self.voltage_setting_ch2 = 0
+            super().set_channel_voltage(self.channel_1, self.voltage_setting_ch1)
+        if self.output_mode == 'Series':
+            self.voltage_setting_ch1 = 64
+            self.voltage_setting_ch2 = 0
+            super().set_channel_voltage(self.channel_1, self.voltage_setting_ch1)
+
+        self.current_max_ch3 = 3.2
+
+        # Set channels into safe mode
+        # All channels start as 'OFF' = 0v
+        self.current_setting_ch1 = 0
+        self.current_setting_ch2 = 0
+
+        super().set_channel_current(self.channel_1, self.current_setting_ch1)
+        super().set_channel_current(self.channel_2, self.current_setting_ch2)
+        self.current_setting_ch3 = 0  # Channel 3 is OFF so 0v
+
+    def set_channel_current(self, channel: str = "CH1", value: float = 0.0, power_on: bool = True):
+        if self.output_mode == 'Parallel':
+            setting = value / 2.0
+        else:
+            setting = value
+        super().set_channel_current(channel=channel, current=setting)
+
+        if channel == 'CH1':
+            self.current_setting_ch1 = value
+        elif channel == 'CH2':
+            self.current_setting_ch2 = value
+
+        return value
+
+    def get_output_current(self, channel: str = "CH1") -> float:
+        current_reading = None
+        if channel == 'CH3' and self.channel_3_state == 'ON':
+            current_reading = self.current_max_ch3
+        elif channel == 'CH3' and self.channel_3_state == 'OFF':
+            current_reading = 0
+        else:
+            if self.output_mode == 'Independent':
+                current = super().get_channel_current(channel=channel)
+                if channel == "CH1":
+                    self.current_setting_ch1 = current
+                elif channel == "CH2":
+                    self.current_setting_ch2 = current
+                else:
+                    self.current_setting_ch3 = current
+
+            elif self.output_mode == 'Parallel' and (channel == 'CH1' or channel == "CH2"):
+                voltage = super().get_channel_voltage(channel=self.channel_1)
+                self.voltage_setting_ch1 = voltage
+                self.voltage_setting_ch1 = voltage
+            elif self.output_mode == 'Series' and (channel == 'CH1' or channel == "CH2"):
+                current = super().get_channel_current(channel=self.channel_1)
+                current_reading = current * self.voltage_multiplier
+                self.current_setting_ch1 = current
+                self.current_setting_ch2 = 0
+
+        return current_reading
+
+
+# class IndependentVoltageSource:
+#     def __init__(self, usb: int = 0, manufacturer_id: str = '0x0483', model_code: str = '0x7540',
+#                  serial_number: str = 'SPD3ECAX1L1560'):
+#         self.voltage_source = VoltageSource(usb = 0, manufacturer_id = '0x0483', model_code  = '0x7540',
+#                  serial_number = 'SPD3ECAX1L1560', output_mode=0)
+#
+#     def set_output_1(self, value:float = 0.0):
+#         super().set_channel_voltage(channel = self.channel, value= 0.0)
+#
+# class ParallelVoltageSource(VoltageSource):
+#     pass
+#
+# class SeriesVoltageSource(VoltageSource):
+#     pass
+
+if __name__ == '__main__':
+
+    with PowerChannel() as p:
+        p.set_channel_power_on("CH1")
+        p.set_channel_power_off("CH1")
+        p.set_channel_power_on("CH2")
+        p.set_channel_power_off("CH2")
+        p.set_channel_power_on("CH3")
+        p.set_channel_power_off("CH3")
+
+    p = None
+
+    with PowerChannel() as p:
+        p.set_channel_power_on("CH1")
+        p.set_channel_power_on("CH2")
+        p.set_channel_power_on("CH3")
+
+    p = None
+
+    output_voltages = [1.0, 0.5, 0.0, 0.5, 1.0]
+    with VoltageSource() as p:
+        p.set_channel_power_on("CH1")
+        for output_voltage in output_voltages:
+            p.set_channel_voltage("CH1", output_voltage)
+        p.set_channel_power_off("CH1")
+
+        p.set_channel_power_on("CH2")
+        for output_voltage in output_voltages:
+            p.set_channel_voltage("CH2", output_voltage)
+        p.set_channel_power_off("CH2")
+
+    p = None
+
+    # output_voltages = [round((v/100)*6.4,2) for v in range(101)]
+    output_voltages = [0,1] * 100
+    with VoltageSource() as p:
+        while True:
+            p.set_channel_power_on("CH1")
+            for output_voltage in output_voltages:
+                # print(output_voltage)
+                p.set_channel_voltage("CH1", output_voltage)
+            print(p.delay)
+
+    # output_voltages = [round((v/100)*6.4,2) for v in range(101)]
+    output_currents = [round((v / 100) * 3.1, 2) for v in range(101)]
+    with CurrentSource() as p:
+        while True:
+            p.set_channel_power_on("CH1")
+            for output_current in output_currents:
+                print(output_current)
+                p.set_channel_current("CH1", output_current)
+            print(p.delay)
